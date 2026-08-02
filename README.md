@@ -37,6 +37,23 @@ docker compose up -d --build
 
 死活確認は `GET /healthz` です。mainブランチへの反映時にはGitHub Actionsが構文チェックとDockerビルドを行い、成功すれば `ghcr.io/shodai123456-creator/job-match:latest` へイメージを公開します。
 
+## Cloudflare Workers公開版
+
+Workers + D1 + Cron Triggers版も同梱しています。Dockerサーバーを維持せず、無料枠でHTTPS・永続保存・毎朝通知を使うための公開版です。D1のデータベースIDとシークレットはGitへ保存しません。
+
+```powershell
+npm.cmd run build:worker
+npx.cmd wrangler login
+npx.cmd wrangler d1 create job-match
+# 出力された database_id を wrangler.jsonc の database_id に設定
+npx.cmd wrangler d1 migrations apply job-match --remote
+npx.cmd wrangler secret put APP_PASSWORD
+npx.cmd wrangler secret put SESSION_SECRET
+npx.cmd wrangler deploy
+```
+
+デプロイ後に表示される `workers.dev` のHTTPS URLをiPhoneのSafariで開き、ホーム画面へ追加します。Cron Triggerは毎時実行され、設定した日本時間の朝に通知対象を送信します。Cloudflareの静的アセット、D1、Cron Trigger、Node互換モードを利用しています。
+
 ## 設計原則
 
 - 初期運用費は0円。有料AI APIを使わない
