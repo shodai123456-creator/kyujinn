@@ -1,0 +1,6 @@
+{
+  "name":"job-match-app",
+  "private":true,
+  "type":"module",
+  "scripts":{"dev":"node server.mjs","check":"node --check app/app.js && node --check server.mjs && node --check app/sw.js"}
+}

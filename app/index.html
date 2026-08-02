@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#08111f">
+  <meta name="description" content="茅ヶ崎駅起点の求人マッチング">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/styles.css">
+  <title>Job Match</title>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">JOB MATCH / MVP</p>
+      <h1>自分に合う求人だけを見る。</h1>
+    </div>
+    <button id="resetDemo" class="ghost-button" type="button">デモをリセット</button>
+  </header>
+
+  <main class="shell">
+    <section class="hero card">
+      <div>
+        <p class="eyebrow accent">今日のダッシュボード</p>
+        <h2 id="heroTitle">あなた向けの求人を整理中</h2>
+        <p class="muted">茅ヶ崎駅から片道150分以内を前提に、希望条件と経歴の相性を採点します。</p>
+      </div>
+      <div class="hero-score"><span id="topScore">—</span><small>最高スコア</small></div>
+    </section>
+
+    <section class="stats-grid">
+      <div class="stat card"><span id="jobCount">0</span><small>登録求人</small></div>
+      <div class="stat card"><span id="recommendedCount">0</span><small>おすすめ</small></div>
+      <div class="stat card"><span id="reviewCount">0</span><small>要確認</small></div>
+      <div class="stat card"><span id="savedCount">0</span><small>保存済み</small></div>
+    </section>
+
+    <nav class="tabs" aria-label="メインメニュー">
+      <button class="tab active" data-tab="jobs" type="button">おすすめ</button>
+      <button class="tab" data-tab="import" type="button">求人を追加</button>
+      <button class="tab" data-tab="profile" type="button">プロフィール</button>
+      <button class="tab" data-tab="settings" type="button">設定</button>
+    </nav>
+
+    <section id="jobs" class="tab-panel active">
+      <div class="section-head"><div><p class="eyebrow">MATCHED JOBS</p><h2>おすすめ求人</h2></div><select id="sortJobs" class="select"><option value="score">おすすめ順</option><option value="newest">新着順</option><option value="salary">年収順</option></select></div>
+      <div id="jobList" class="job-list"></div>
+    </section>
+
+    <section id="import" class="tab-panel">
+      <div class="section-head"><div><p class="eyebrow">MANUAL IMPORT</p><h2>求人を追加</h2></div></div>
+      <div class="card form-card">
+        <p class="notice">規約上、自動取得できないサイトは求人本文を貼り付けて取り込みます。原文URLを必ず残してください。</p>
+        <form id="jobForm" class="form-grid">
+          <label>企業名<input name="company" required placeholder="例：株式会社サンプル"></label>
+          <label>求人タイトル<input name="title" required placeholder="例：プロダクトマネージャー"></label>
+          <label>勤務地<input name="location" required placeholder="例：東京都渋谷区 / フルリモート"></label>
+          <label>最寄り駅<input name="station" placeholder="例：渋谷駅"></label>
+          <label>最低年収（万円）<input name="salaryMin" type="number" min="0" placeholder="500"></label>
+          <label>最高年収（万円）<input name="salaryMax" type="number" min="0" placeholder="800"></label>
+          <label>雇用形態<select name="employment"><option>正社員</option><option>契約社員</option><option>副業</option><option>業務委託</option></select></label>
+          <label>リモート<select name="remote"><option>フルリモート</option><option>ハイブリッド</option><option>出社</option><option>不明</option></select></label>
+          <label class="wide">求人URL<input name="url" type="url" placeholder="https://..."></label>
+          <label class="wide">求人本文<textarea name="description" required rows="7" placeholder="求人本文を貼り付けてください。スキルや仕事内容の採点に使います。"></textarea></label>
+          <button class="primary-button wide" type="submit">採点して登録</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="profile" class="tab-panel">
+      <div class="section-head"><div><p class="eyebrow">PROFILE</p><h2>あなたの条件</h2></div></div>
+      <form id="profileForm" class="card form-card form-grid">
+        <label>希望職種<input name="roles" placeholder="例：プロダクトマネージャー, Webディレクター"></label>
+        <label>希望業界<input name="industries" placeholder="例：SaaS, IT, メディア"></label>
+        <label>最低年収（万円）<input name="minSalary" type="number" min="0"></label>
+        <label>通勤上限（分）<input name="maxCommute" type="number" min="1"></label>
+        <label>希望雇用形態<input name="employmentTypes" placeholder="例：正社員, 副業"></label>
+        <label>除外キーワード<input name="excluded" placeholder="例：転勤, SES"></label>
+        <label class="wide">スキル・経験（カンマ区切り）<textarea name="skills" rows="4" placeholder="例：プロジェクトマネジメント, SQL, 要件定義"></textarea></label>
+        <div class="wide form-actions"><button class="primary-button" type="submit">プロフィールを保存して再採点</button><span id="profileSaved" class="success-text"></span></div>
+      </form>
+      <div class="card privacy-card"><h3>履歴書・職務経歴書</h3><p class="muted">原本をサーバーへ送らない設計です。PDF/DOCXは次の解析器追加に備え、現状は抽出テキストを貼り付けて確認できます。</p><label class="file-button">テキストを読み込む<input id="resumeFile" type="file" accept=".txt,.md,.json"></label><p id="fileStatus" class="muted"></p></div>
+    </section>
+
+    <section id="settings" class="tab-panel">
+      <div class="section-head"><div><p class="eyebrow">SCORING SETTINGS</p><h2>評価の重み</h2></div></div>
+      <form id="weightsForm" class="card form-card">
+        <p class="muted">合計100%。高くしたい項目を上げると、次回の採点に反映されます。</p>
+        <div id="weightFields"></div>
+        <div class="weight-total"><span>合計</span><strong id="weightTotal">100%</strong></div>
+        <button class="primary-button" type="submit">重みを保存</button>
+      </form>
+      <div class="card source-card"><p class="eyebrow">SOURCE POLICY</p><h3>求人ソースの扱い</h3><p class="muted">承認済みAPI・フィード・企業採用ページだけ自動収集します。規約が不明なサイトは、本文貼り付けやファイル取込に切り替えます。</p><span class="pill green">自動応募なし</span><span class="pill green">CAPTCHA回避なし</span><span class="pill green">低頻度アクセス</span></div>
+      <div class="card source-card"><p class="eyebrow">YOUR DATA</p><h3>データのバックアップ</h3><p class="muted">求人、プロフィール、評価設定をJSONで保存・復元できます。履歴書原本は含まれません。</p><div class="job-actions"><button id="exportData" class="secondary-button" type="button">JSONを書き出す</button><label class="file-button">JSONを復元<input id="importData" type="file" accept="application/json,.json"></label></div></div>
+    </section>
+  </main>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="/app.js?v=2" type="module"></script>
+</body>
+</html>
