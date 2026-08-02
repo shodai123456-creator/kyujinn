@@ -1,14 +1,15 @@
 import { createServer } from 'node:http';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { extname, join, normalize } from 'node:path';
+import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import webpush from 'web-push';
 
 const projectRoot = fileURLToPath(new URL('.', import.meta.url));
 const appRoot = join(projectRoot, 'app');
-const statePath = join(projectRoot, 'data', 'state.json');
+const dataDir = process.env.DATA_DIR ? resolve(process.env.DATA_DIR) : join(projectRoot, 'data');
+const statePath = join(dataDir, 'state.json');
 const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || '127.0.0.1';
 const appPassword = process.env.APP_PASSWORD || '';
@@ -35,7 +36,7 @@ async function readState() {
   try { return { ...blankState(), ...JSON.parse(await readFile(statePath, 'utf8')) }; } catch { return blankState(); }
 }
 async function persist(state) {
-  await mkdir(join(projectRoot, 'data'), { recursive: true });
+  await mkdir(dataDir, { recursive: true });
   state.meta = { ...state.meta, updatedAt: new Date().toISOString() };
   const temporary = `${statePath}.tmp`;
   await writeFile(temporary, JSON.stringify(state, null, 2), 'utf8');
@@ -127,6 +128,7 @@ const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     const { pathname } = url;
+    if (pathname === '/healthz' && req.method === 'GET') return json(res, 200, { ok: true, version: 1 });
     if (pathname === '/api/auth/status' && req.method === 'GET') return json(res, 200, { required: Boolean(appPassword), authenticated: sessionIsValid(req) });
     if (pathname === '/api/auth/login' && req.method === 'POST') {
       if (!appPassword) return json(res, 200, { ok: true });

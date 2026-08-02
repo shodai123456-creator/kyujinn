@@ -26,6 +26,17 @@ docker run -p 4173:4173 -e APP_PASSWORD="任意の長いパスワード" -e SESS
 
 `APP_PASSWORD` を設定すると、APIと保存データは30日間のHttpOnlyセッションで保護されます。本番のリバースプロキシではHTTPS終端を行い、`X-Forwarded-Proto: https` を渡してください。HTTPS URLをiPhoneのSafariで開き、「共有」→「ホーム画面に追加」を選ぶとPWAとして利用できます。
 
+### Docker Compose（推奨）
+
+` .env.example` を `.env` にコピーして、二つの値を長くランダムな文字列に置き換えます。その後、次で起動できます。Dockerボリュームに求人・設定・通知鍵が永続保存されます。
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d --build
+```
+
+死活確認は `GET /healthz` です。mainブランチへの反映時にはGitHub Actionsが構文チェックとDockerビルドを行い、成功すれば `ghcr.io/shodai123456-creator/job-match:latest` へイメージを公開します。
+
 ## 設計原則
 
 - 初期運用費は0円。有料AI APIを使わない

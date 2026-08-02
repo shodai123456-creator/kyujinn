@@ -1,0 +1,19 @@
+services:
+  job-match:
+    build: .
+    ports:
+      - "4173:4173"
+    environment:
+      APP_PASSWORD: ${APP_PASSWORD:?Set APP_PASSWORD in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+    volumes:
+      - job-match-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4173/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  job-match-data:
