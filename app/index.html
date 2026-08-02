@@ -79,7 +79,7 @@
         <label class="wide">スキル・経験（カンマ区切り）<textarea name="skills" rows="4" placeholder="例：プロジェクトマネジメント, SQL, 要件定義"></textarea></label>
         <div class="wide form-actions"><button class="primary-button" type="submit">プロフィールを保存して再採点</button><span id="profileSaved" class="success-text"></span></div>
       </form>
-      <div class="card privacy-card"><h3>履歴書・職務経歴書</h3><p class="muted">原本をサーバーへ送らない設計です。PDF/DOCXは次の解析器追加に備え、現状は抽出テキストを貼り付けて確認できます。</p><label class="file-button">テキストを読み込む<input id="resumeFile" type="file" accept=".txt,.md,.json"></label><p id="fileStatus" class="muted"></p></div>
+      <div class="card privacy-card"><h3>履歴書・職務経歴書</h3><p class="muted">PDF、DOCX、テキストをこの端末内で解析します。原本はサーバーへ送信・保存されません。</p><label class="file-button">ファイルを読み込む<input id="resumeFile" type="file" accept=".pdf,.docx,.txt,.md,.json"></label><p id="fileStatus" class="muted"></p><details id="resumePreview"><summary>抽出内容を確認</summary><pre id="resumeText"></pre></details></div>
     </section>
 
     <section id="settings" class="tab-panel">
@@ -91,10 +91,13 @@
         <button class="primary-button" type="submit">重みを保存</button>
       </form>
       <div class="card source-card"><p class="eyebrow">SOURCE POLICY</p><h3>求人ソースの扱い</h3><p class="muted">承認済みAPI・フィード・企業採用ページだけ自動収集します。規約が不明なサイトは、本文貼り付けやファイル取込に切り替えます。</p><span class="pill green">自動応募なし</span><span class="pill green">CAPTCHA回避なし</span><span class="pill green">低頻度アクセス</span></div>
+      <div class="card source-card"><p class="eyebrow">APPROVED FEEDS</p><h3>承認済みRSS / Atomフィード</h3><p class="muted">利用規約とrobots.txtを自分で確認済みの公開フィードだけ追加できます。未確認サイトを有効化しないでください。</p><form id="sourceForm" class="form-grid"><label>ソース名<input name="name" required placeholder="例：企業採用RSS"></label><label>フィードURL<input name="url" type="url" required placeholder="https://example.com/jobs.xml"></label><label>利用規約URL<input name="termsUrl" type="url" required placeholder="https://example.com/terms"></label><label>robots.txt URL<input name="robotsUrl" type="url" required placeholder="https://example.com/robots.txt"></label><label class="wide check-label"><input name="approved" type="checkbox" required> 利用規約とrobots.txtを確認し、このフィードの取得・保存が許可されることを確認しました</label><button class="primary-button wide" type="submit">承認済みフィードを追加</button></form><div id="sourceList" class="reasons"></div><button id="collectFeeds" class="ghost-button" type="button">承認済みフィードを今すぐ確認</button></div>
+      <div class="card source-card"><p class="eyebrow">NOTIFICATIONS</p><h3>iPhone通知</h3><p class="muted">ホーム画面へ追加したPWAで、毎朝のまとめと高得点求人の通知を受け取れます。</p><div class="form-grid"><label>朝通知の時刻<input id="morningHour" type="number" min="0" max="23" value="7"></label><label>即時通知の閾値<input id="notifyThreshold" type="number" min="0" max="100" value="80"></label></div><div class="job-actions"><button id="enablePush" class="secondary-button" type="button">通知を有効化</button><button id="testPush" class="ghost-button" type="button">テスト通知</button></div><p id="pushStatus" class="muted"></p></div>
       <div class="card source-card"><p class="eyebrow">YOUR DATA</p><h3>データのバックアップ</h3><p class="muted">求人、プロフィール、評価設定をJSONで保存・復元できます。履歴書原本は含まれません。</p><div class="job-actions"><button id="exportData" class="secondary-button" type="button">JSONを書き出す</button><label class="file-button">JSONを復元<input id="importData" type="file" accept="application/json,.json"></label></div></div>
     </section>
   </main>
   <div id="toast" class="toast" role="status"></div>
-  <script src="/app.js?v=2" type="module"></script>
+  <script src="/vendor/mammoth.js"></script>
+  <script src="/app.js?v=3" type="module"></script>
 </body>
 </html>
