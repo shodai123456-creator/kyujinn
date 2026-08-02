@@ -4,6 +4,8 @@ import { existsSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import webpush from 'web-push';
 
 const projectRoot = fileURLToPath(new URL('.', import.meta.url));
@@ -15,6 +17,7 @@ const host = process.env.HOST || '127.0.0.1';
 const appPassword = process.env.APP_PASSWORD || '';
 const sessionSecret = process.env.SESSION_SECRET || appPassword || randomBytes(32).toString('hex');
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.webmanifest': 'application/manifest+json; charset=utf-8' };
+const loginAttempts = new Map();
 
 const blankState = () => ({
   version: 1,
@@ -50,7 +53,8 @@ async function ensureVapid(state) {
   webpush.setVapidDetails('mailto:job-match@localhost', state.meta.vapid.publicKey, state.meta.vapid.privateKey);
   return state.meta.vapid.publicKey;
 }
-function json(res, status, body) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(body)); }
+function securityHeaders(extra = {}) { return { 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()', 'Content-Security-Policy': "default-src 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'", ...extra }; }
+function json(res, status, body) { res.writeHead(status, securityHeaders({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })); res.end(JSON.stringify(body)); }
 function parseCookies(req) { return Object.fromEntries(String(req.headers.cookie || '').split(';').map(value => value.trim().split('=').map(decodeURIComponent)).filter(pair => pair.length === 2)); }
 function sign(value) { return createHmac('sha256', sessionSecret).update(value).digest('base64url'); }
 function createSession() { const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 1000 * 60 * 60 * 24 * 30, nonce: randomBytes(16).toString('hex') })).toString('base64url'); return `${payload}.${sign(payload)}`; }
@@ -58,11 +62,16 @@ function sessionIsValid(req) { if (!appPassword) return true; const token = pars
 function passwordMatches(candidate) { const left = createHmac('sha256', sessionSecret).update(String(candidate || '')).digest(); const right = createHmac('sha256', sessionSecret).update(appPassword).digest(); return timingSafeEqual(left, right); }
 function unauthorized(res) { return json(res, 401, { error: 'Authentication required' }); }
 async function bodyJson(req) {
-  const parts = []; for await (const part of req) parts.push(part);
+  const parts = []; let size = 0; for await (const part of req) { size += part.length; if (size > 2_000_000) throw new Error('Payload too large'); parts.push(part); }
   const raw = Buffer.concat(parts).toString('utf8');
-  if (raw.length > 2_000_000) throw new Error('Payload too large');
   return raw ? JSON.parse(raw) : {};
 }
+function clientKey(req) { return String(req.socket.remoteAddress || 'unknown'); }
+function loginAllowed(req) { const entry = loginAttempts.get(clientKey(req)); return !entry || entry.until < Date.now() || entry.count < 5; }
+function recordLoginFailure(req) { const key = clientKey(req); const previous = loginAttempts.get(key); const count = previous?.until > Date.now() ? previous.count + 1 : 1; loginAttempts.set(key, { count, until: Date.now() + 15 * 60_000 }); }
+function clearLoginFailures(req) { loginAttempts.delete(clientKey(req)); }
+function forbiddenAddress(address) { if (isIP(address) === 6) return address === '::1' || address.startsWith('fc') || address.startsWith('fd') || address.startsWith('fe80:'); const octets = address.split('.').map(Number); return octets[0] === 0 || octets[0] === 10 || octets[0] === 127 || (octets[0] === 169 && octets[1] === 254) || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) || (octets[0] === 192 && octets[1] === 168); }
+async function safeFeedUrl(value) { let url; try { url = new URL(value); } catch { return null; } if (url.protocol !== 'https:' || /^localhost$/i.test(url.hostname)) return null; try { const addresses = await lookup(url.hostname, { all: true }); return addresses.length && addresses.every(entry => !forbiddenAddress(entry.address)) ? url : null; } catch { return null; } }
 function stateForClient(state) {
   const { subscriptions, ...safe } = state;
   return safe;
@@ -98,14 +107,13 @@ async function collectApprovedFeeds() {
   const state = await readState(); let changed = false;
   for (const source of state.sources || []) {
     if (source.mode !== 'feed' || !source.approved || !source.enabled || !source.url || !source.termsUrl || !source.robotsUrl) continue;
-    let feedUrl;
-    try { feedUrl = new URL(source.url); } catch { continue; }
-    if (feedUrl.protocol !== 'https:' || /^localhost$/i.test(feedUrl.hostname) || /^127\./.test(feedUrl.hostname) || /^\[?::1\]?$/.test(feedUrl.hostname)) continue;
+    const feedUrl = await safeFeedUrl(source.url);
+    if (!feedUrl) continue;
     const lastCollected = Date.parse(source.lastCollectedAt || 0) || 0;
     const minimumInterval = Math.max(60, Number(source.minimumIntervalMinutes) || 60) * 60_000;
     if (Date.now() - lastCollected < minimumInterval) continue;
     let response;
-    try { response = await fetch(feedUrl, { headers: { 'User-Agent': 'JobMatch/1.0 (+manual compliance-managed feed collector)' }, signal: AbortSignal.timeout(15_000) }); }
+    try { response = await fetch(feedUrl, { headers: { 'User-Agent': 'JobMatch/1.0 (+manual compliance-managed feed collector)' }, redirect: 'error', signal: AbortSignal.timeout(15_000) }); }
     catch { source.lastCollectedAt = new Date().toISOString(); changed = true; continue; }
     source.lastCollectedAt = new Date().toISOString(); changed = true;
     if (!response.ok) continue;
@@ -132,9 +140,11 @@ const server = createServer(async (req, res) => {
     if (pathname === '/api/auth/status' && req.method === 'GET') return json(res, 200, { required: Boolean(appPassword), authenticated: sessionIsValid(req) });
     if (pathname === '/api/auth/login' && req.method === 'POST') {
       if (!appPassword) return json(res, 200, { ok: true });
+      if (!loginAllowed(req)) return json(res, 429, { error: 'Too many login attempts. Try again later.' });
       const payload = await bodyJson(req);
-      if (!passwordMatches(payload.password)) return json(res, 401, { error: 'Invalid password' });
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Set-Cookie': `job_match_session=${createSession()}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000${req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}` });
+      if (!passwordMatches(payload.password)) { recordLoginFailure(req); return json(res, 401, { error: 'Invalid password' }); }
+      clearLoginFailures(req);
+      res.writeHead(200, securityHeaders({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Set-Cookie': `job_match_session=${createSession()}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000${req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}` }));
       return res.end(JSON.stringify({ ok: true }));
     }
     if (pathname === '/api/auth/logout' && req.method === 'POST') { res.writeHead(204, { 'Set-Cookie': 'job_match_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0' }); return res.end(); }
@@ -163,7 +173,7 @@ const server = createServer(async (req, res) => {
     const filePath = vendorMap[pathname] || normalize(join(appRoot, pathname === '/' ? 'index.html' : pathname));
     if (!(filePath.startsWith(appRoot) || Object.values(vendorMap).includes(filePath))) return res.writeHead(403).end('Forbidden');
     const content = await readFile(filePath);
-    res.writeHead(200, { 'Content-Type': types[extname(filePath)] || 'application/octet-stream', 'Cache-Control': pathname.startsWith('/vendor/') ? 'public, max-age=86400' : 'no-cache' });
+    res.writeHead(200, securityHeaders({ 'Content-Type': types[extname(filePath)] || 'application/octet-stream', 'Cache-Control': pathname.startsWith('/vendor/') ? 'public, max-age=86400' : 'no-cache' }));
     res.end(content);
   } catch (error) { json(res, error instanceof SyntaxError ? 400 : 500, { error: error.message || 'Server error' }); }
 });
