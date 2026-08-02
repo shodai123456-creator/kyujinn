@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import webpush from 'web-push';
 
 const projectRoot = fileURLToPath(new URL('.', import.meta.url));
@@ -10,6 +11,8 @@ const appRoot = join(projectRoot, 'app');
 const statePath = join(projectRoot, 'data', 'state.json');
 const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || '127.0.0.1';
+const appPassword = process.env.APP_PASSWORD || '';
+const sessionSecret = process.env.SESSION_SECRET || appPassword || randomBytes(32).toString('hex');
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.webmanifest': 'application/manifest+json; charset=utf-8' };
 
 const blankState = () => ({
@@ -47,6 +50,12 @@ async function ensureVapid(state) {
   return state.meta.vapid.publicKey;
 }
 function json(res, status, body) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(body)); }
+function parseCookies(req) { return Object.fromEntries(String(req.headers.cookie || '').split(';').map(value => value.trim().split('=').map(decodeURIComponent)).filter(pair => pair.length === 2)); }
+function sign(value) { return createHmac('sha256', sessionSecret).update(value).digest('base64url'); }
+function createSession() { const payload = Buffer.from(JSON.stringify({ exp: Date.now() + 1000 * 60 * 60 * 24 * 30, nonce: randomBytes(16).toString('hex') })).toString('base64url'); return `${payload}.${sign(payload)}`; }
+function sessionIsValid(req) { if (!appPassword) return true; const token = parseCookies(req).job_match_session; if (!token) return false; const [payload, signature] = token.split('.'); if (!payload || !signature) return false; const expected = sign(payload); if (expected.length !== signature.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) return false; try { return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')).exp > Date.now(); } catch { return false; } }
+function passwordMatches(candidate) { const left = createHmac('sha256', sessionSecret).update(String(candidate || '')).digest(); const right = createHmac('sha256', sessionSecret).update(appPassword).digest(); return timingSafeEqual(left, right); }
+function unauthorized(res) { return json(res, 401, { error: 'Authentication required' }); }
 async function bodyJson(req) {
   const parts = []; for await (const part of req) parts.push(part);
   const raw = Buffer.concat(parts).toString('utf8');
@@ -118,6 +127,16 @@ const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     const { pathname } = url;
+    if (pathname === '/api/auth/status' && req.method === 'GET') return json(res, 200, { required: Boolean(appPassword), authenticated: sessionIsValid(req) });
+    if (pathname === '/api/auth/login' && req.method === 'POST') {
+      if (!appPassword) return json(res, 200, { ok: true });
+      const payload = await bodyJson(req);
+      if (!passwordMatches(payload.password)) return json(res, 401, { error: 'Invalid password' });
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Set-Cookie': `job_match_session=${createSession()}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000${req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}` });
+      return res.end(JSON.stringify({ ok: true }));
+    }
+    if (pathname === '/api/auth/logout' && req.method === 'POST') { res.writeHead(204, { 'Set-Cookie': 'job_match_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0' }); return res.end(); }
+    if (pathname.startsWith('/api/') && !sessionIsValid(req)) return unauthorized(res);
     if (pathname === '/api/state' && req.method === 'GET') return json(res, 200, stateForClient(await readState()));
     if (pathname === '/api/state' && req.method === 'PUT') {
       const incoming = await bodyJson(req);

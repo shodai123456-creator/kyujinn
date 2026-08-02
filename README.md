@@ -15,6 +15,17 @@ npm.cmd start
 
 起動後に `http://localhost:4173` を開きます。既定では同じPCだけから接続できます。iPhoneで使う本番公開には、HTTPS対応のホスティングと認証を追加してください。
 
+## iPhone向け公開
+
+Dockerイメージで任意のHTTPS対応ホスティングに載せられます。公開環境では、必ず長いランダムな値を設定します。
+
+```powershell
+docker build -t job-match .
+docker run -p 4173:4173 -e APP_PASSWORD="任意の長いパスワード" -e SESSION_SECRET="十分に長いランダム文字列" job-match
+```
+
+`APP_PASSWORD` を設定すると、APIと保存データは30日間のHttpOnlyセッションで保護されます。本番のリバースプロキシではHTTPS終端を行い、`X-Forwarded-Proto: https` を渡してください。HTTPS URLをiPhoneのSafariで開き、「共有」→「ホーム画面に追加」を選ぶとPWAとして利用できます。
+
 ## 設計原則
 
 - 初期運用費は0円。有料AI APIを使わない

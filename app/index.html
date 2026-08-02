@@ -15,10 +15,11 @@
       <p class="eyebrow">JOB MATCH / MVP</p>
       <h1>自分に合う求人だけを見る。</h1>
     </div>
-    <button id="resetDemo" class="ghost-button" type="button">デモをリセット</button>
+    <div class="job-actions"><button id="logout" class="ghost-button" type="button" hidden>ログアウト</button><button id="resetDemo" class="ghost-button" type="button">デモをリセット</button></div>
   </header>
 
-  <main class="shell">
+  <section id="loginCard" class="shell" hidden><div class="card form-card login-card"><p class="eyebrow">PRIVATE APP</p><h2>Job Matchにログイン</h2><p class="muted">このアプリは個人の求人条件を扱います。公開環境ではアクセスパスワードを設定してください。</p><form id="loginForm" class="form-grid"><label class="wide">アクセスパスワード<input name="password" type="password" autocomplete="current-password" required></label><button class="primary-button" type="submit">ログイン</button><span id="loginStatus" class="muted"></span></form></div></section>
+  <main id="appMain" class="shell" hidden>
     <section class="hero card">
       <div>
         <p class="eyebrow accent">今日のダッシュボード</p>
@@ -98,6 +99,6 @@
   </main>
   <div id="toast" class="toast" role="status"></div>
   <script src="/vendor/mammoth.js"></script>
-  <script src="/app.js?v=3" type="module"></script>
+  <script src="/app.js?v=4" type="module"></script>
 </body>
 </html>
