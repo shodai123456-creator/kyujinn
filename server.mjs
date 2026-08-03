@@ -7,6 +7,9 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import webpush from 'web-push';
+import { migrateSources, RecruitmentSourceRepository } from './src/recruitment/repositories/recruitment-source-repository.js';
+import { JobPostingRepository } from './src/recruitment/repositories/job-posting-repository.js';
+import { crawlSource } from './src/recruitment/services/crawl-source.js';
 
 const projectRoot = fileURLToPath(new URL('.', import.meta.url));
 const appRoot = join(projectRoot, 'app');
@@ -28,6 +31,7 @@ const blankState = () => ({
     { id: 'manual', name: '手動取込', mode: 'manual_only', approved: true, enabled: true, termsUrl: '', robotsUrl: '', minimumIntervalMinutes: 0 },
     { id: 'rss-template', name: 'RSS / Atom（審査後に有効化）', mode: 'feed', approved: false, enabled: false, termsUrl: '', robotsUrl: '', minimumIntervalMinutes: 60 }
   ],
+  recruitment: { sources: [], postings: [], crawlHistory: [] },
   notifications: { morningEnabled: true, morningHour: 7, instantEnabled: true, threshold: 80, minimumConfidence: 80 },
   subscriptions: [],
   notificationLog: [],
@@ -36,7 +40,7 @@ const blankState = () => ({
 
 async function readState() {
   if (!existsSync(statePath)) return blankState();
-  try { return { ...blankState(), ...JSON.parse(await readFile(statePath, 'utf8')) }; } catch { return blankState(); }
+  try { const state = { ...blankState(), ...JSON.parse(await readFile(statePath, 'utf8')) }; migrateSources(state); return state; } catch { const state = blankState(); migrateSources(state); return state; }
 }
 async function persist(state) {
   await mkdir(dataDir, { recursive: true });
@@ -128,9 +132,23 @@ async function collectApprovedFeeds() {
   }
   if (changed) await persist(state);
 }
+async function collectApprovedRecruitmentSources(sourceId = null) {
+  const state = await readState();
+  const sources = new RecruitmentSourceRepository(state);
+  const jobs = new JobPostingRepository(state);
+  for (const source of sources.list()) {
+    if (sourceId && source.id !== sourceId) continue;
+    const result = await crawlSource({ source, postings: jobs.list() });
+    jobs.replace(result.postings);
+    if (result.crawl) state.recruitment.crawlHistory = [...state.recruitment.crawlHistory, result.crawl].slice(-200);
+    sources.save(source);
+  }
+  await persist(state);
+  return state;
+}
 function normalKey(value) { return String(value).toLowerCase().replace(/\s+/g, ''); }
 setInterval(() => { maybeSendMorning().catch(() => {}); }, 60_000).unref();
-setInterval(() => { collectApprovedFeeds().catch(() => {}); }, 60 * 60 * 1000).unref();
+setInterval(() => { collectApprovedRecruitmentSources().catch(() => {}); }, 60 * 60 * 1000).unref();
 
 const server = createServer(async (req, res) => {
   try {
@@ -153,7 +171,8 @@ const server = createServer(async (req, res) => {
     if (pathname === '/api/state' && req.method === 'PUT') {
       const incoming = await bodyJson(req);
       const current = await readState();
-      const next = { ...current, profile: incoming.profile || null, weights: incoming.weights || null, jobs: Array.isArray(incoming.jobs) ? incoming.jobs.slice(0, 2000) : current.jobs, notifications: incoming.notifications || current.notifications, sources: Array.isArray(incoming.sources) ? incoming.sources : current.sources };
+      const next = { ...current, profile: incoming.profile || null, weights: incoming.weights || null, jobs: Array.isArray(incoming.jobs) ? incoming.jobs.slice(0, 2000) : current.jobs, notifications: incoming.notifications || current.notifications, sources: Array.isArray(incoming.sources) ? incoming.sources : current.sources, recruitment: incoming.recruitment || current.recruitment };
+      migrateSources(next);
       await persist(next); return json(res, 200, stateForClient(next));
     }
     if (pathname === '/api/export' && req.method === 'GET') return json(res, 200, stateForClient(await readState()));
@@ -167,7 +186,21 @@ const server = createServer(async (req, res) => {
     }
     if (pathname === '/api/push/test' && req.method === 'POST') { const state = await readState(); await sendPush(state, { type: 'test', title: 'Job Match', body: '通知の設定が完了しました。', url: '/' }); return json(res, 200, { ok: true }); }
     if (pathname === '/api/push/job' && req.method === 'POST') { const payload = await bodyJson(req); const state = await readState(); await sendPush(state, { type: 'job', title: payload.title || '高得点の新着求人', body: payload.body || '', url: '/' }); return json(res, 200, { ok: true }); }
-    if (pathname === '/api/sources/collect' && req.method === 'POST') { await collectApprovedFeeds(); return json(res, 200, stateForClient(await readState())); }
+    if (pathname === '/api/recruitment/sources' && req.method === 'GET') { const state = await readState(); return json(res, 200, state.recruitment); }
+    if (pathname === '/api/recruitment/sources' && req.method === 'POST') {
+      const payload = await bodyJson(req); const state = await readState(); const repo = new RecruitmentSourceRepository(state);
+      const source = { id: `source-${crypto.randomUUID()}`, companyName: String(payload.companyName || ''), sourceName: String(payload.sourceName || ''), sourceType: payload.sourceType || 'rss', entryUrl: String(payload.entryUrl || ''), officialCareerUrl: String(payload.officialCareerUrl || ''), termsUrl: String(payload.termsUrl || ''), robotsUrl: String(payload.robotsUrl || ''), adapterType: payload.adapterType || 'generic_html', requiresJavaScript: payload.requiresJavaScript || false, crawlIntervalHours: Math.max(6, Number(payload.crawlIntervalHours) || 24), enabled: false, approvalStatus: 'pending', notes: String(payload.notes || ''), humanReviewed: false };
+      repo.save(source); await persist(state); return json(res, 201, source);
+    }
+    if (/^\/api\/recruitment\/sources\/[^/]+$/.test(pathname) && req.method === 'PUT') {
+      const id = pathname.split('/').pop(); const payload = await bodyJson(req); const state = await readState(); const repo = new RecruitmentSourceRepository(state); const existing = repo.get(id); if (!existing) return json(res, 404, { error: 'Source not found' });
+      const next = { ...existing, ...payload, id, crawlIntervalHours: Math.max(6, Number(payload.crawlIntervalHours ?? existing.crawlIntervalHours) || 24) };
+      if (next.approvalStatus === 'approved' && (!next.humanReviewed || !next.officialCareerUrl || !next.termsUrl || !next.robotsUrl || !next.entryUrl)) return json(res, 400, { error: 'Approval requires human review plus official, terms, robots, and entry URLs.' });
+      if (next.approvalStatus !== 'approved') next.enabled = false;
+      repo.save(next); await persist(state); return json(res, 200, next);
+    }
+    if (/^\/api\/recruitment\/sources\/[^/]+\/crawl$/.test(pathname) && req.method === 'POST') { const id = pathname.split('/')[4]; return json(res, 200, stateForClient(await collectApprovedRecruitmentSources(id))); }
+    if (pathname === '/api/sources/collect' && req.method === 'POST') return json(res, 200, stateForClient(await collectApprovedRecruitmentSources()));
 
     const vendorMap = { '/vendor/pdf.mjs': join(projectRoot, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.mjs'), '/vendor/pdf.worker.mjs': join(projectRoot, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.mjs'), '/vendor/mammoth.js': join(projectRoot, 'node_modules', 'mammoth', 'mammoth.browser.min.js') };
     const filePath = vendorMap[pathname] || normalize(join(appRoot, pathname === '/' ? 'index.html' : pathname));

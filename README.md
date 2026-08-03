@@ -1,5 +1,18 @@
 # Job Match App
 
+## Recruitment sources: safe operation
+
+RSS / Atom, HTML job lists and details, and JSON APIs are managed through one source model. Mitsubishi Electric, IHI, Nissan, and Isuzu are seeded as **pending and disabled** sources.
+
+- Confirm that the target is linked from the official career page.
+- Register the terms URL and robots.txt URL.
+- A human administrator records the review and explicitly changes the source to `approved`.
+- Only then may the source be enabled. `robots.txt` is recorded but never treated as automatic terms permission.
+
+Every source has a minimum six-hour interval (24 hours by default), sequential domain access, an explicit User-Agent, timeout, exponential retries for 429/403/503, and recorded robots fetch results. One failure never closes a job. A job closes only on an explicit closed notice or after it is absent from both list and detail for three successful consecutive crawls. Content changes retain a snapshot history.
+
+Use static HTML first, then an official JSON API. JavaScript rendering is intentionally not enabled by default; assess the site and add it only when these approaches cannot work. Do not enable a source whose terms or approval state is unclear.
+
 茅ヶ崎駅から片道150分以内で通える求人を中心に、履歴書・職務経歴書と希望条件から求人のおすすめ度を0〜100点で評価する、iPhone向けPWAです。
 
 ## 現在の状態

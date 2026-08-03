@@ -1,0 +1,3 @@
+import { genericDetail, linksFromHtml } from '../html/generic-html-adapter.js';
+export const jpostingList = (html, url) => linksFromHtml(html, url, /job\.phtml|jobdetail|detail|jobid/i).filter(item => !/job\.phtml(?:\?|$)/i.test(item.url) || /jobid|id=/i.test(item.url));
+export function jpostingDetail(html, url) { const job = genericDetail(html, url); const title = /(?:職種名|募集職種)\s*<\/[^>]+>\s*<[^>]+>([\s\S]{1,500}?)<\//i.exec(html)?.[1]; const externalJobId = /(?:jobid|job_id|id)=([\w-]+)/i.exec(url)?.[1] || ''; return { ...job, title: title ? title.replace(/<[^>]+>/g, ' ').trim() : job.title, externalJobId, rawData: { parser: 'jposting' } }; }

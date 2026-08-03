@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node server.mjs",
     "dev": "node server.mjs",
-    "check": "node --check app/app.js && node --check server.mjs && node --check app/sw.js && node --check worker/index.mjs",
+    "check": "node --check app/app.js && node --check server.mjs && node --check app/sw.js && node --check worker/index.mjs && node --check src/recruitment/services/crawl-source.js",
+    "test": "node --test tests/*.test.mjs",
     "build:worker": "node scripts/build-worker.mjs",
     "dev:worker": "npm run build:worker && wrangler dev --local",
     "deploy:worker": "npm run build:worker && wrangler deploy",
