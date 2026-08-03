@@ -1,5 +1,13 @@
 # Job Match App
 
+## Personal Career OS
+
+Job Match is designed as a user-controlled layer over existing job sites rather than another job marketplace. It generates site-specific searches from personal criteria, captures only jobs selected by the user, explains fit and missing information, compares jobs on consistent axes, and tracks the next action through the application pipeline.
+
+The current build includes a search commander, quick capture, evidence-based scoring, up-to-four-job comparison, application stages, next-action prompts, and learning from rejection reasons. It does not republish a third party's job inventory.
+
+Before opening registration to the public, replace the current single-user password and shared state with per-user authentication, per-user database ownership, deletion/export controls, encrypted sensitive fields, audit logging, rate limits, and privacy/terms pages. The current deployment model is suitable for private use or a closed beta only.
+
 ## Recruitment sources: safe operation
 
 RSS / Atom, HTML job lists and details, and JSON APIs are managed through one source model. Mitsubishi Electric, IHI, Nissan, and Isuzu are seeded as **pending and disabled** sources.
